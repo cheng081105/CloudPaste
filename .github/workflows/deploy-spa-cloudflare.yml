@@ -81,14 +81,48 @@ jobs:
       - name: Install frontend dependencies
         working-directory: ./frontend
         run: |
-          echo "安装前端依赖..."
-          npm ci
+          echo "🔧 安装前端依赖..."
+          if npm ci; then
+            echo "✅ npm ci 成功"
+          else
+            echo "⚠️ npm ci 失败，尝试使用 npm install..."
+            npm install --legacy-peer-deps || npm install
+          fi
+          echo "✅ 依赖安装完成"
 
       - name: Build frontend
         working-directory: ./frontend
         run: |
-          echo "构建前端静态资源..."
+          echo "🏗️ 构建前端静态资源..."
+          echo "环境变量："
+          echo "  VITE_APP_ENV: ${VITE_APP_ENV}"
+          echo "  VITE_ENABLE_DEVTOOLS: ${VITE_ENABLE_DEVTOOLS}"
+          
           npm run build
+          BUILD_EXIT=$?
+          
+          echo ""
+          echo "构建完成，返回码: $BUILD_EXIT"
+          
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "❌ 构建失败，返回码: $BUILD_EXIT"
+            exit 1
+          fi
+          
+          echo "✅ 构建成功"
+          echo ""
+          echo "📦 dist 目录内容："
+          if [ -d "dist" ]; then
+            ls -lah dist/
+            echo ""
+            echo "📊 构建产物统计："
+            du -sh dist/
+            find dist -type f | wc -l | xargs echo "文件数量:"
+          else
+            echo "❌ dist 目录不存在！"
+            ls -la ./
+            exit 1
+          fi
         env:
           VITE_APP_ENV: production
           VITE_ENABLE_DEVTOOLS: false
@@ -96,16 +130,24 @@ jobs:
       - name: Verify frontend build
         run: |
           echo "✅ 验证前端构建产物..."
+          
           if [ ! -d "frontend/dist" ]; then
             echo "❌ 前端构建失败：dist 目录不存在"
+            echo "当前目录结构："
+            ls -la frontend/
             exit 1
           fi
+          echo "✅ dist 目录存在"
 
           if [ ! -f "frontend/dist/index.html" ]; then
             echo "❌ 前端构建失败：index.html 不存在"
+            echo "dist 目录内容："
+            ls -la frontend/dist/
             exit 1
           fi
+          echo "✅ index.html 存在"
 
+          echo ""
           echo "前端构建产物大小："
           du -sh frontend/dist
           echo "前端文件数量："
@@ -115,12 +157,13 @@ jobs:
       - name: Install backend dependencies
         working-directory: ./backend
         run: |
-          echo "安装后端依赖（不包含可选依赖）..."
-          if npm ci --no-optional; then
+          echo "🔧 安装后端依赖（不包含可选依赖）..."
+          if npm ci --no-optional 2>&1 | tee npm-ci.log; then
             echo "✅ npm ci 成功"
           else
-            echo "⚠️ npm ci 失败，将使用npm install更新lock文件"
-            npm install --no-optional
+            echo "⚠️ npm ci 失败，将使用 npm install 更新 lock 文件"
+            cat npm-ci.log
+            npm install --no-optional || npm install
           fi
 
       - name: Disable wrangler telemetry
@@ -286,6 +329,7 @@ jobs:
           echo "1. 前端构建问题："
           echo "   - 检查 frontend/package.json 依赖是否正确"
           echo "   - 验证 npm run build 在本地是否成功"
+          echo "   - 查看上方构建日志中的详细错误信息"
           echo ""
           echo "2. 后端部署问题："
           echo "   - 确保 wrangler.spa.toml 配置正确"
@@ -303,7 +347,7 @@ jobs:
         if: always()
         run: |
           if [ "${{ job.status }}" == "success" ]; then
-            echo "✅ SPA Worker部署成功！"
+            echo "✅ SPA Worker 部署成功！"
           else
-            echo "❌ SPA Worker部署失败！"
+            echo "❌ SPA Worker 部署失败！"
           fi
